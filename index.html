@@ -181,6 +181,9 @@ nav{gap:12px;font-size:13px}
       <div><label for="ad">Address / Town</label><input id="ad" placeholder="e.g. Makeni"></div>
     </div>
     <div><label for="ms">Message</label><textarea id="ms" rows="3"></textarea></div>
+    <div class="card" id="payBlock" style="background:var(--bg)"><h3 style="margin-top:0;color:var(--pri)">💳 Admission fee – Orange Money</h3>
+    <p style="margin:0 0 10px;font-size:14px">Admission fee: <b id="feeAmt"></b>. Send it by Orange Money to <b id="omNum"></b> (<span id="omName"></span>), then enter the details below. The school will confirm your payment and your status changes from <b>Pending</b> to <b>Paid</b>.</p>
+    <div class="row"><div><label for="pp">Orange Money phone number used *</label><input id="pp" type="tel"></div><div><label for="pr">Transaction ID / reference *</label><input id="pr"></div></div></div>
     <div id="rmsg" class="msg"></div>
     <button class="btn" type="submit">Submit Registration</button>
   </form></div>
@@ -233,10 +236,11 @@ nav{gap:12px;font-size:13px}
 <div class="modal" id="dashModal"><div class="box wide">
   <div class="top"><h3 style="margin:0;color:var(--pri)">Admin Dashboard – Registered Users</h3>
     <div class="tools"><button class="btn sm" id="csvBtn">⬇ Export CSV</button><button class="btn sm" id="adminPost">Post content</button><button class="btn sm" id="logoutBtn" style="background:var(--bd);color:var(--tx)">Logout</button></div></div>
-  <div class="tabs"><button class="on" data-tab="reg">Registrations</button><button data-tab="msg">Messages (<span id="sMsg">0</span>)</button></div>
-  <div class="dash-stats"><div><b id="sTot">0</b>Total</div><div><b id="sPar">0</b>Parents</div><div><b id="sStu">0</b>Students</div><div><b id="sStf">0</b>Staff applicants</div></div>
-  <input id="q" placeholder="Search name, email, phone…" style="margin-bottom:10px">
-  <div class="tw"><table><thead><tr><th>#</th><th>Name</th><th>Email</th><th>Phone</th><th>Role</th><th>Class</th><th>Address</th><th>Date</th><th></th></tr></thead><tbody id="tb"></tbody></table></div>
+  <div class="tabs"><button class="on" data-tab="reg">Registrations</button><button data-tab="usr">Users &amp; Logins</button><button data-tab="msg">Messages (<span id="sMsg">0</span>)</button></div>
+  <div class="dash-stats"><div><b id="sTot">0</b>Total</div><div><b id="sPar">0</b>Parents</div><div><b id="sStu">0</b>Students</div><div><b id="sStf">0</b>Staff applicants</div><div><b id="sPaid">0</b>Paid</div><div><b id="sPend">0</b>Pending</div></div>
+  <input id="q" placeholder="Search name, email, phone…" style="margin-bottom:10px"><select id="payFilter" style="margin-bottom:10px"><option value="all">All payment statuses</option><option value="pending">Pending</option><option value="paid">Paid</option><option value="failed">Failed</option><option value="none">No payment required</option></select>
+  <div class="tw" id="regTw"><table><thead><tr><th>#</th><th>Name</th><th>Email</th><th>Phone</th><th>Role</th><th>Class</th><th>Address</th><th>Payment</th><th>Date</th><th></th></tr></thead><tbody id="tb"></tbody></table></div>
+  <div id="usrBox" style="display:none"><div class="bar"><input id="uq" placeholder="Search name or email…" style="max-width:260px"><select id="uRole"><option value="all">All roles</option><option value="student">Students</option><option value="teacher">Teachers</option><option value="parent">Parents</option><option value="admin">Admin</option></select><select id="uSort"><option value="recent">Most recent login</option><option value="name">Name A–Z</option><option value="count">Most logins</option></select></div><div class="note" id="uCount"></div><div class="tw"><table><thead><tr><th>#</th><th>Name</th><th>Email</th><th>Role</th><th>Last login</th><th>Logins</th><th>Joined</th></tr></thead><tbody id="utb"></tbody></table></div></div>
   <div id="msgBox" style="display:none"><div class="tw"><table><thead><tr><th>#</th><th>Name</th><th>Email</th><th>Message</th><th>Date</th><th></th></tr></thead><tbody id="mtb"></tbody></table></div></div>
   <div class="note" id="dbNote"></div>
 </div></div>
@@ -253,6 +257,11 @@ const FIREBASE_CONFIG={
   appId:"1:254103698533:web:d42ed2b34c1cd90cdf1a8c"
 };
 const ADMIN_EMAIL="festusamadukamara@gmail.com";
+/* ===== ADMISSION PAYMENT SETTINGS (edit these 3 lines) ===== */
+const ADMISSION_FEE="SLE 200";
+const ORANGE_NUMBER="0XX XXX XXX";
+const ORANGE_NAME="Benevolent Islamic Secondary School";
+/* =========================================================== */
 /* ================================================================================================ */
 const $=id=>document.getElementById(id);
 $("yr").textContent=new Date().getFullYear();
@@ -276,12 +285,13 @@ async function delUser(id){
 }
 function render(){
   const q=$("q").value.toLowerCase();
-  const f=rows.filter(r=>[r.name,r.email,r.phone,r.role].join(" ").toLowerCase().includes(q));
+  const pf=$("payFilter").value;const f=rows.filter(r=>[r.name,r.email,r.phone,r.role,r.payRef].join(" ").toLowerCase().includes(q)&&(pf==="all"||(r.paymentStatus||"none")===pf));
+  $("sPaid").textContent=rows.filter(r=>r.paymentStatus==="paid").length;$("sPend").textContent=rows.filter(r=>r.paymentStatus==="pending").length;
   $("sTot").textContent=rows.length;
   $("sPar").textContent=rows.filter(r=>r.role.startsWith("Parent")).length;
   $("sStu").textContent=rows.filter(r=>r.role.startsWith("Prospective")).length;
   $("sStf").textContent=rows.filter(r=>r.role.startsWith("Teacher")).length;
-  $("tb").innerHTML=f.length?f.map((r,i)=>`<tr><td>${i+1}</td><td>${esc(r.name)}</td><td>${esc(r.email)}</td><td>${esc(r.phone)}</td><td>${esc(r.role)}</td><td>${esc(r.cls)}</td><td>${esc(r.address)}</td><td>${esc((r.created||"").slice(0,10))}</td><td><button class="del" data-id="${esc(r.id)}">Delete</button></td></tr>${r.message?`<tr><td></td><td colspan="8" style="color:var(--mut)">💬 ${esc(r.message)}</td></tr>`:""}`).join(""):`<tr><td colspan="9" style="text-align:center;color:var(--mut)">No users found.</td></tr>`;
+  $("tb").innerHTML=f.length?f.map((r,i)=>`<tr><td>${i+1}</td><td>${esc(r.name)}</td><td>${esc(r.email)}</td><td>${esc(r.phone)}</td><td>${esc(r.role)}</td><td>${esc(r.cls)}</td><td>${esc(r.address)}</td><td>${payCell(r)}</td><td>${esc((r.created||"").slice(0,10))}</td><td><button class="del" data-id="${esc(r.id)}">Delete</button></td></tr>${r.message?`<tr><td></td><td colspan="9" style="color:var(--mut)">💬 ${esc(r.message)}</td></tr>`:""}`).join(""):`<tr><td colspan="10" style="text-align:center;color:var(--mut)">No users found.</td></tr>`;
   $("dbNote").textContent="Storage: Firebase Firestore database (secure, shared).";
 }
 $("tb").addEventListener("click",e=>{if(e.target.dataset.id)delUser(e.target.dataset.id)});
@@ -290,9 +300,12 @@ $("q").addEventListener("input",render);
 $("regForm").addEventListener("submit",async e=>{
   e.preventDefault();const m=$("rmsg");
   const u={id:"u"+Date.now().toString(36)+Math.random().toString(36).slice(2,6),name:$("fn").value.trim(),email:$("em").value.trim(),phone:$("ph").value.trim(),role:$("rl").value,cls:$("cl").value,address:$("ad").value.trim(),message:$("ms").value.trim(),created:new Date().toISOString()};
+  const needPay=!["Teacher / Staff Applicant","Visitor"].includes(u.role);
+  u.payMethod=needPay?"Orange Money":"";u.payAmount=needPay?ADMISSION_FEE:"";u.payPhone=needPay?$("pp").value.trim():"";u.payRef=needPay?$("pr").value.trim():"";u.paymentStatus=needPay?"pending":"none";
+  if(needPay&&(u.payPhone.length<6||u.payRef.length<4)){m.className="msg err";m.textContent="Please enter your Orange Money phone number and transaction ID.";return}
   if(!u.name||!/^\S+@\S+\.\S+$/.test(u.email)||u.phone.length<6){m.className="msg err";m.textContent="Please enter a valid name, email and phone number.";return}
   if(!fdb){m.className="msg err";m.textContent="The database is not connected yet. Please try again later.";return}
-  try{await fdb.collection("registrations").doc(u.id).set(u);m.className="msg ok";m.textContent="Thank you, "+u.name+"! Your registration has been received.";e.target.reset()}
+  try{await fdb.collection("registrations").doc(u.id).set(u);m.className="msg ok";m.textContent="Thank you, "+u.name+"! Your registration has been received."+(needPay?" Payment status: Pending confirmation.":"");e.target.reset()}
   catch(err){m.className="msg err";m.textContent="Could not save your registration. Please try again."}
 });
 
@@ -301,8 +314,8 @@ $("openLogin").onclick=()=>{$("lmsg").className="msg";open("loginModal");$("le")
 document.querySelectorAll("[data-close]").forEach(b=>b.onclick=()=>close(b.dataset.close));
 $("logoutBtn").onclick=async()=>{try{await auth.signOut()}catch(e){}close("dashModal")};
 $("csvBtn").onclick=()=>{
-  const h=["Name","Email","Phone","Role","Class","Address","Message","Date"];
-  const csv=[h.join(",")].concat(rows.map(r=>[r.name,r.email,r.phone,r.role,r.cls,r.address,r.message,r.created].map(v=>'"'+String(v??"").replace(/"/g,'""')+'"').join(","))).join("\n");
+  const h=["Name","Email","Phone","Role","Class","Address","Message","Date","Payment status","Payment ref","Amount"];
+  const csv=[h.join(",")].concat(rows.map(r=>[r.name,r.email,r.phone,r.role,r.cls,r.address,r.message,r.created,r.paymentStatus,r.payRef,r.payAmount].map(v=>'"'+String(v??"").replace(/"/g,'""')+'"').join(","))).join("\n");
   const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));a.download="users.csv";a.click();
 };
 const menuBtn=document.getElementById("menuBtn"),mainNav=document.getElementById("mainNav");
@@ -342,8 +355,10 @@ $("mtb").addEventListener("click",async e=>{const id=e.target.dataset.mid;if(!id
 const _lu=loadUsers;loadUsers=async function(){await _lu();await loadMsgs()};
 document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>{
   document.querySelectorAll(".tabs button").forEach(x=>x.classList.toggle("on",x===b));
-  const msg=b.dataset.tab==="msg";$("msgBox").style.display=msg?"block":"none";
-  $("q").style.display=msg?"none":"block";document.querySelector("#dashModal .tw").style.display=msg?"none":"block"});
+  const t=b.dataset.tab,reg=t==="reg";
+  $("msgBox").style.display=t==="msg"?"block":"none";$("usrBox").style.display=t==="usr"?"block":"none";
+  $("q").style.display=reg?"block":"none";$("payFilter").style.display=reg?"block":"none";$("regTw").style.display=reg?"block":"none";
+  if(t==="usr")loadAcct()});
 let ME=null,PROF=null,unsubChat=null,mode="in",signingUp=false,goAfter=false;
 window.PROF=null;
 const T=t=>fdb.collection(t);
@@ -382,7 +397,7 @@ async function setUser(u,prof){
  }
  window.PROF=PROF;
  $("navLogin").textContent=PROF?"Dashboard":"Login";
- if(PROF&&goAfter){goAfter=false;goDash()}
+ if(PROF&&goAfter){goAfter=false;trackLogin();goDash()}
 }
 if(auth)auth.onAuthStateChanged(u=>{if(signingUp)return;setUser(u)});
 function goDash(){if(PROF&&PROF.role==="admin"){open("dashModal");loadUsers()}else location.hash="#dashboard"}
@@ -470,6 +485,39 @@ function onPage(h){
  else if(h==="dashboard")renderDash();
 }
 route();
+const PCOL={pending:"#b7791f",paid:"#0f6b4a",failed:"#b3261e",none:"var(--mut)"};
+function payCell(r){const st=r.paymentStatus||"none";if(st==="none"&&!r.payRef)return"—";
+ return `<div style="font-size:12px">${esc(r.payMethod)} ${esc(r.payAmount)}<br>Ref: ${esc(r.payRef)}<br>${esc(r.payPhone)}</div><select data-pay="${esc(r.id)}" style="width:auto;padding:4px;margin-top:4px;color:${PCOL[st]||"inherit"};font-weight:700"><option value="pending"${st==="pending"?" selected":""}>Pending</option><option value="paid"${st==="paid"?" selected":""}>Paid</option><option value="failed"${st==="failed"?" selected":""}>Failed</option></select>`}
+$("tb").addEventListener("change",async e=>{const id=e.target.dataset.pay;if(!id)return;
+ try{await fdb.collection("registrations").doc(id).update({paymentStatus:e.target.value,statusUpdated:new Date().toISOString()})}catch(x){alert("Could not update status: "+x.message)}loadUsers()});
+$("payFilter").onchange=render;
+$("rl").addEventListener("change",()=>{$("payBlock").style.display=["Teacher / Staff Applicant","Visitor"].includes($("rl").value)?"none":"block"});
+$("feeAmt").textContent=ADMISSION_FEE;$("omNum").textContent=ORANGE_NUMBER;$("omName").textContent=ORANGE_NAME;
+
+async function trackLogin(){
+ if(!fdb||!ME||!PROF)return;
+ try{await T("logins").doc(ME.uid).set({uid:ME.uid,name:PROF.name,email:ME.email,lastLogin:new Date().toISOString(),loginCount:firebase.firestore.FieldValue.increment(1)},{merge:true})}catch(x){console.warn("login tracking failed",x)}
+}
+let accts=[];
+async function loadAcct(){
+ $("utb").innerHTML='<tr><td colspan="7" class="note">Loading…</td></tr>';
+ try{
+  const [us,ls]=await Promise.all([fdb.collection("users").get(),fdb.collection("logins").get()]);
+  const m={};
+  us.forEach(d=>{const x=d.data();m[x.uid]={uid:x.uid,name:x.name,email:x.email,role:x.role,joined:x.created||"",last:"",count:0}});
+  ls.forEach(d=>{const x=d.data();const a=m[x.uid]||(m[x.uid]={uid:x.uid,name:x.name,email:x.email,role:(x.email||"").toLowerCase()===ADMIN_EMAIL?"admin":"user",joined:""});a.last=x.lastLogin||"";a.count=x.loginCount||0;a.name=a.name||x.name;a.email=a.email||x.email});
+  accts=Object.values(m);renderAcct();
+ }catch(x){$("utb").innerHTML='<tr><td colspan="7" class="note">Could not load: '+esc(x.message)+'</td></tr>'}
+}
+function renderAcct(){
+ const q=$("uq").value.toLowerCase(),r=$("uRole").value,so=$("uSort").value;
+ let f=accts.filter(a=>(r==="all"||a.role===r)&&((a.name||"")+" "+(a.email||"")).toLowerCase().includes(q));
+ f.sort((a,b)=>so==="name"?(a.name||"").localeCompare(b.name||""):so==="count"?(b.count-a.count):(b.last||"").localeCompare(a.last||""));
+ const fmt=v=>v?new Date(v).toLocaleString():"—";
+ $("uCount").textContent=f.length+" of "+accts.length+" accounts";
+ $("utb").innerHTML=f.length?f.map((a,i)=>`<tr><td>${i+1}</td><td>${esc(a.name)}</td><td>${esc(a.email)}</td><td><span class="badge">${esc(a.role)}</span></td><td>${fmt(a.last)}</td><td>${a.count||0}</td><td>${esc((a.joined||"").slice(0,10))}</td></tr>`).join(""):'<tr><td colspan="7" style="text-align:center;color:var(--mut)">No accounts found.</td></tr>';
+}
+["uq","uRole","uSort"].forEach(id=>{$(id).addEventListener("input",renderAcct);$(id).addEventListener("change",renderAcct)});
 </script>
 </body>
 </html>
